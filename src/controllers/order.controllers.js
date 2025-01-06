@@ -1,116 +1,92 @@
-import Order from "../models/order.model.js";
-import User from "../models/user.models.js";
-import Product from "../models/product.model.js";
+import Users from "../models/user.models.js"
+import Product from "../models/product.model.js"
+import Order from "../models/order.model.js"
 
 
-//create order
- const createOrder = async (req, res) => {
-    const { userId, productIds } = req.body;
+
+//customer create order
+const createOrder = async (req,res)=>{
+    const {id,quantity} = req.body
+    const userId = req.user.id;
+
+    const user = await Users.findById(userId)
+    if(!user) return res.status(404).json({message:"User not found"})
+     if (user.role !== "customer") {
+            return res.status(403).json({ message: "Unauthorized: Only customers can place orders" });
+    }
 
     try {
-        const user = await User.findById(userId);
-        if (!user) {
-            res.status(404).json({ message: "User not found" });
-            return;
-        }
+        const product = await Product.findById(id)
+    if(!product) return res.status(404).json({message:"Product not found"})
 
-        //search for products in the database
-        const products = await Product.find({ _id: { $in: productIds } });
-        if (!products || products.length === 0) {
-            res.status(404).json({ message: "Products not found" });
-            return;
-        }
+    const totalPrice = product.price * quantity
+    const order = await Order.create({
+        user: userId,
+        products: [id],
+        quantity,
+        totalPrice,
+        status: "Order Done"
+    })
+    
+    await user.save()
+    await user.updateOne({
+        $push: {orders: order._id}
+    })
 
-        let totalPrice = 0;
-        products.forEach((product) => {
-            totalPrice += product.price;
+
+    const productOwner = await Users.findById(product.user); 
+    if (productOwner) {
+        await productOwner.updateOne({
+            $push: { orders: order._id }
         });
-
-        const order = new Order({
-            user: userId,
-            products: productIds,
-            totalPrice: totalPrice,
-        });
-
-        await order.save();
-
-        res.status(201).json({ message: "Order created", order: order });
-    } catch (err) {
-        console.log("Error:", err);
-        res.status(500).json({ message: "Something went wrong" });
     }
-};
 
-//get all orders
- const getAllOrders = async (req, res) => {
-    try {
-        const orders = await Order.find().populate("user").populate("products");
-        res.status(200).json({ orders: orders });
-    } catch (err) {
-        console.log("Error:", err);
-        res.status(500).json({ message: "Something went wrong" });
+
+    res.status(200).json({
+        message:"Order created successfully",
+        order
+    })
+    } catch (error) {
+        console.log(error);
+        
     }
-};
+
+
+}
+
+//get order list
+const getOrderList = async (req,res)=>{
+   try {
+    const userId = req.user.id;
+    const user = await Users.findById(userId).populate("orders")
+    if(!user) return res.status(404).json({message:"User not found"})
+    
+    res.status(200).json({
+        message:"Order list",
+        orders: user.orders
+    })
+   } catch (error) {
+    console.log(error);
+    
+   }
+}
 
 //get single order
- const getOrderById = async (req, res) => {
-    const { orderId } = req.params;
+const getSingleOrder = async (req,res)=>{
+   try {
+    const {id} = req.params;
+    const user = await Order.findById(id).populate("products")
+    if(!user) return res.status(404).json({message:"User not found"})
 
-    try {
-        const order = await Order.findById(orderId).populate("user").populate("products");
-        if (!order) {
-            res.status(404).json({ message: "Order not found" });
-            return;
-        }
-        res.status(200).json({ order: order });
-    } catch (err) {
-        console.log("Error:", err);
-        res.status(500).json({ message: "Something went wrong" });
-    }
-};
+    res.status(200).json({
+        message:"Single order",
+        order: user
+    })
+   } catch (error) {
+    console.log(error);
+    
+   }
+    
+}
 
-//update order
- const updateOrderStatus = async (req, res) => {
-    const { orderId } = req.params;
-    const { status } = req.body;
-
-    try {
-        const allowedStatuses = ["pending", "completed", "shipped"];
-        if (!allowedStatuses.includes(status)) {
-            res.status(400).json({ message: "Invalid status" });
-            return;
-        }
-
-        const order = await Order.findByIdAndUpdate(orderId, { status: status }, { new: true });
-        if (!order) {
-            res.status(404).json({ message: "Order not found" });
-            return;
-        }
-
-        res.status(200).json({ message: "Order updated", order: order });
-    } catch (err) {
-        console.log("Error:", err);
-        res.status(500).json({ message: "Something went wrong" });
-    }
-};
-
-//delete order
- const deleteOrder = async (req, res) => {
-    const { orderId } = req.params;
-
-    try {
-        const order = await Order.findByIdAndDelete(orderId);
-        if (!order) {
-            res.status(404).json({ message: "Order not found" });
-            return;
-        }
-
-        res.status(200).json({ message: "Order deleted", order: order });
-    } catch (err) {
-        console.log("Error:", err);
-        res.status(500).json({ message: "Something went wrong" });
-    }
-};
-
-//exporting
-export {createOrder , getAllOrders, getOrderById, updateOrderStatus, deleteOrder}
+export {createOrder,getOrderList,getSingleOrder}
